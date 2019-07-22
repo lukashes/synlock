@@ -17,11 +17,12 @@ func TestGoodNew(t *testing.T) {
 	}, {
 		desc: "good host connection",
 		conn: "redis://localhost",
-	},}
+	}}
 
 	for _, s := range suites {
+		suit := s
 		t.Run(s.desc, func(t *testing.T) {
-			var sl, err = New(s.conn)
+			var sl, err = New(suit.conn)
 			if err != nil {
 				t.Fatal("unexpected error", err)
 			}
@@ -48,8 +49,9 @@ func TestBrokenNew(t *testing.T) {
 	}}
 
 	for _, s := range suites {
+		suit := s
 		t.Run(s.desc, func(t *testing.T) {
-			var _, err = New(s.conn)
+			var _, err = New(suit.conn)
 			if err == nil {
 				t.Fatal("expected error")
 			}

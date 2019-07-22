@@ -2,7 +2,6 @@ package synlock
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"net/url"
 	"strconv"
 	"strings"
@@ -43,6 +42,6 @@ func New(conn string) (Synlock, error) {
 
 		return NewRedis(opts)
 	default:
-		return nil, errors.New(fmt.Sprintf("unexpected scheme: %s", u.Scheme))
+		return nil, fmt.Errorf("unexpected scheme: %s", u.Scheme)
 	}
 }
