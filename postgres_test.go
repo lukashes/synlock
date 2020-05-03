@@ -7,23 +7,23 @@ import (
 	"time"
 )
 
-func TestRedisMutex(t *testing.T) {
-	r, err := NewRedis(DefRedisOpts)
+func TestPostgresMutex(t *testing.T) {
+	p, err := NewPostgres(DefPostgresOpts)
 	if err != nil {
-		t.Fatalf("init redis object error: %s", err)
+		t.Fatalf(	"init postgres object error: %s", err)
 	}
 
-	m1, err := r.NewMutex(123)
+	m1, err := p.NewMutex(123)
 	if err != nil {
 		t.Fatalf("making new mutex error: %s", err)
 	}
-	mu1 := m1.(*RedisMutex)
+	mu1 := m1.(*PostgresMutex)
 
-	m2, err := r.NewMutex(123)
+	m2, err := p.NewMutex(123)
 	if err != nil {
 		t.Fatalf("making new mutex error: %s", err)
 	}
-	mu2 := m2.(*RedisMutex)
+	mu2 := m2.(*PostgresMutex)
 
 	var critical = false
 	if err = mu1.lock(); err != nil {
