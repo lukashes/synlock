@@ -1,14 +1,12 @@
 package synlock
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx"
 )
 
 var (
@@ -23,16 +21,16 @@ var DefPostgresOpts = PostgresOpts{
 }
 
 type PostgresOpts struct {
-	Host string
-	Port string
-	DB   string
-	User string
-	Pass string
+	Host           string
+	Port           string
+	DB             string
+	User           string
+	Pass           string
 	MaxConnections int
 }
 
 type Postgres struct {
-	client *pgxpool.Pool
+	client *pgx.ConnPool
 }
 
 func NewPostgres(conf PostgresOpts) (*Postgres, error) {
@@ -49,17 +47,18 @@ func NewPostgres(conf PostgresOpts) (*Postgres, error) {
 
 	var (
 		connString      = fmt.Sprintf("postgres://%s%s:%s/%s", auth, conf.Host, conf.Port, conf.DB)
-		connConfig, err = pgxpool.ParseConfig(connString)
+		connConfig, err = pgx.ParseConnectionString(connString)
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if conf.MaxConnections > 0 {
-		connConfig.MaxConns = int32(conf.MaxConnections)
+	var connPoolConfig = pgx.ConnPoolConfig{
+		ConnConfig:     connConfig,
+		MaxConnections: conf.MaxConnections,
 	}
 
-	conn, err := pgxpool.ConnectConfig(context.Background(), connConfig)
+	conn, err := pgx.NewConnPool(connPoolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to database: %v", err)
 	}
@@ -77,12 +76,12 @@ func (r *Postgres) NewMutex(key int64) (Mutex, error) {
 }
 
 type PostgresMutex struct {
-	client  *pgxpool.Pool
+	client  *pgx.ConnPool
 	key     int64
 	monitor chan struct{}
 	mu      sync.Mutex
 	tok     string
-	tx      pgx.Tx
+	tx      *pgx.Tx
 }
 
 func (s *PostgresMutex) Lock() error {
@@ -107,11 +106,11 @@ func (s *PostgresMutex) lock() error {
 			time.Sleep(jitter)
 		}
 
-		if s.tx, err = s.client.Begin(context.Background()); err != nil {
+		if s.tx, err = s.client.Begin(); err != nil {
 			return err
 		}
 
-		err = s.tx.QueryRow(context.Background(), "SELECT pg_try_advisory_xact_lock($1)", s.key).Scan(&ok)
+		err = s.tx.QueryRow("SELECT pg_try_advisory_xact_lock($1)", s.key).Scan(&ok)
 		if err != nil {
 			return err
 		}
@@ -120,7 +119,7 @@ func (s *PostgresMutex) lock() error {
 			return nil
 		}
 
-		if err = s.tx.Rollback(context.Background()); err != nil {
+		if err = s.tx.Rollback(); err != nil {
 			return err
 		}
 
@@ -136,5 +135,5 @@ func (s *PostgresMutex) lock() error {
 }
 
 func (s *PostgresMutex) unlock() error {
-	return s.tx.Rollback(context.Background())
+	return s.tx.Rollback()
 }
