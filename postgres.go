@@ -33,7 +33,7 @@ type Postgres struct {
 	client *pgx.ConnPool
 }
 
-func NewPostgres(conf PostgresOpts) (*Postgres, error) {
+func NewPostgres(conf PostgresOpts) (_ *Postgres, err error) {
 	if conf.Host == "" || conf.Port == "" {
 		return nil, ErrPostgresInvalidAddr
 	}
@@ -46,10 +46,10 @@ func NewPostgres(conf PostgresOpts) (*Postgres, error) {
 	}
 
 	var (
-		connString      = fmt.Sprintf("postgres://%s%s:%s/%s", auth, conf.Host, conf.Port, conf.DB)
-		connConfig, err = pgx.ParseConnectionString(connString)
+		connString = fmt.Sprintf("postgres://%s%s:%s/%s", auth, conf.Host, conf.Port, conf.DB)
+		connConfig pgx.ConnConfig
 	)
-	if err != nil {
+	if connConfig, err = pgx.ParseConnectionString(connString); err != nil {
 		return nil, err
 	}
 
