@@ -1,5 +1,7 @@
 docker-compose:
-	docker-compose up -d
+	docker-compose pull
+	docker-compose up -d && sleep 5
+	#docker-compose logs
 
 test: docker-compose
 	go test -v -count=1 ./...
