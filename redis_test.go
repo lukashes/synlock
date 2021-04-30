@@ -1,6 +1,7 @@
 package synlock
 
 import (
+	"context"
 	"runtime"
 	"sync"
 	"testing"
@@ -17,16 +18,16 @@ func TestRedisMutex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("making new mutex error: %s", err)
 	}
-	mu1 := m1.(*RedisMutex)
+	mu1 := MustRedisMutex(m1)
 
 	m2, err := r.NewMutex(123)
 	if err != nil {
 		t.Fatalf("making new mutex error: %s", err)
 	}
-	mu2 := m2.(*RedisMutex)
+	mu2 := MustRedisMutex(m2)
 
 	var critical = false
-	if err = mu1.lock(); err != nil {
+	if err = mu1.lock(context.Background()); err != nil {
 		t.Fatalf("acquiring lock error: %s", err)
 	}
 
@@ -38,7 +39,7 @@ func TestRedisMutex(t *testing.T) {
 			t.Fatalf("invalid critical section value")
 		}
 
-		if err := mu2.lock(); err != nil {
+		if err := mu2.lock(context.Background()); err != nil {
 			t.Fatalf("acquiring lock error: %s", err)
 		}
 		if !critical {
