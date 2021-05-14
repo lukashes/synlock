@@ -15,6 +15,7 @@ sudo: false
 install: true
 script:
   - env GO111MODULE=on go build
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   - env GO111MODULE=on make test
 
 before_script:
