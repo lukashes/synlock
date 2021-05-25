@@ -1,13 +1,13 @@
 package synlock
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -55,6 +55,15 @@ type Redis struct {
 	prefix string
 }
 
+func MustRedisMutex(mu Mutex) *RedisMutex {
+	switch t := mu.(type) {
+	case *RedisMutex:
+		return t
+	}
+
+	return nil
+}
+
 func NewRedis(conf RedisOpts) (*Redis, error) {
 	if conf.Host == "" || conf.Port == "" {
 		return nil, ErrRedisInvalidAddr
@@ -78,6 +87,7 @@ func (r *Redis) NewMutex(key int64) (Mutex, error) {
 	return &RedisMutex{
 		client: r.client,
 		key:    fmt.Sprintf("%s:%d", r.prefix, key),
+		mu:     make(chan struct{}, 1),
 	}, nil
 }
 
@@ -85,21 +95,44 @@ type RedisMutex struct {
 	client  *redis.Client
 	key     string
 	monitor chan struct{}
-	mu      sync.Mutex
+	mu      chan struct{}
 	tok     string
 }
 
-func (s *RedisMutex) Lock() error {
-	s.mu.Lock()
-	return s.lock()
+func (s *RedisMutex) LockContext(ctx context.Context) (err error) {
+	s.mu <- struct{}{}
+	defer func() {
+		if err != nil {
+			<-s.mu
+		}
+	}()
+
+	return s.lock(ctx)
+}
+
+func (s *RedisMutex) Lock() (err error) {
+	s.mu <- struct{}{}
+	defer func() {
+		if err != nil {
+			<-s.mu
+		}
+	}()
+
+	return s.lock(context.Background())
 }
 
 func (s *RedisMutex) Unlock() error {
-	defer s.mu.Unlock()
+	defer func() {
+		select {
+		case <-s.mu:
+		default:
+		}
+	}()
+
 	return s.unlock()
 }
 
-func (s *RedisMutex) lock() error {
+func (s *RedisMutex) lock(ctx context.Context) error {
 	var (
 		ok     bool
 		err    error
@@ -114,8 +147,10 @@ func (s *RedisMutex) lock() error {
 	s.tok = hex.EncodeToString(token)
 
 	for !ok {
-		if jitter > 0 {
-			time.Sleep(jitter)
+		select {
+		case <-time.After(jitter):
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 
 		ok, err = s.client.SetNX(s.key, s.tok, time.Minute).Result()
