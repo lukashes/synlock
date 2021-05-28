@@ -53,6 +53,7 @@ type RedisOpts struct {
 type Redis struct {
 	client *redis.Client
 	prefix string
+	opts   *options
 }
 
 func MustRedisMutex(mu Mutex) *RedisMutex {
@@ -64,13 +65,23 @@ func MustRedisMutex(mu Mutex) *RedisMutex {
 	return nil
 }
 
-func NewRedis(conf RedisOpts) (*Redis, error) {
+func NewRedis(conf RedisOpts, opts ...Option) (*Redis, error) {
 	if conf.Host == "" || conf.Port == "" {
 		return nil, ErrRedisInvalidAddr
 	}
 
 	if conf.Prefix == "" {
 		return nil, ErrRedisInvalidPrefix
+	}
+
+	o := new(options)
+
+	o.errorHandler = func(key string, err error) {
+		log.Printf("Can't reset session expiration for key %s: %s", key, err)
+	}
+
+	for _, opt := range opts {
+		opt(o)
 	}
 
 	return &Redis{
@@ -80,6 +91,7 @@ func NewRedis(conf RedisOpts) (*Redis, error) {
 			MaxRetries: 3,
 		}),
 		prefix: conf.Prefix,
+		opts:   o,
 	}, nil
 }
 
@@ -88,6 +100,7 @@ func (r *Redis) NewMutex(key int64) (Mutex, error) {
 		client: r.client,
 		key:    fmt.Sprintf("%s:%d", r.prefix, key),
 		mu:     make(chan struct{}, 1),
+		opts:   r.opts,
 	}, nil
 }
 
@@ -97,6 +110,7 @@ type RedisMutex struct {
 	monitor chan struct{}
 	mu      chan struct{}
 	tok     string
+	opts    *options
 }
 
 func (s *RedisMutex) LockContext(ctx context.Context) (err error) {
@@ -190,7 +204,12 @@ func (s *RedisMutex) lock(ctx context.Context) error {
 			}
 
 			if err != nil || castToInt(val) != 1 {
-				log.Printf("Can't reset session expiration: %s", err)
+				s.opts.errorHandler(s.key, err)
+				select {
+				case <-s.mu:
+				default:
+				}
+				return
 			}
 		}
 	}()
@@ -199,6 +218,10 @@ func (s *RedisMutex) lock(ctx context.Context) error {
 }
 
 func (s *RedisMutex) unlock() error {
+	if s.monitor == nil {
+		return errors.New("mutex is not locked")
+	}
+
 	close(s.monitor)
 
 	val, err := redisDelScript.Run(s.client, []string{s.key}, s.tok).Result()
