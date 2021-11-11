@@ -44,10 +44,11 @@ var DefRedisOpts = RedisOpts{
 }
 
 type RedisOpts struct {
-	Host   string
-	Port   string
-	DB     int
-	Prefix string
+	Host     string
+	Port     string
+	DB       int
+	Password string
+	Prefix   string
 }
 
 type Redis struct {
@@ -88,6 +89,7 @@ func NewRedis(conf RedisOpts, opts ...Option) (*Redis, error) {
 		client: redis.NewClient(&redis.Options{
 			Addr:       net.JoinHostPort(conf.Host, conf.Port),
 			DB:         conf.DB,
+			Password:   conf.Password,
 			MaxRetries: 3,
 		}),
 		prefix: conf.Prefix,
