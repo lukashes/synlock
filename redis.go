@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 )
 
 // lua scripts
@@ -44,11 +44,10 @@ var DefRedisOpts = RedisOpts{
 }
 
 type RedisOpts struct {
-	Host     string
-	Port     string
-	DB       int
-	Password string
-	Prefix   string
+	Host, Port         string
+	DB                 int
+	Username, Password string
+	Prefix             string
 }
 
 type Redis struct {
@@ -89,6 +88,7 @@ func NewRedis(conf RedisOpts, opts ...Option) (*Redis, error) {
 		client: redis.NewClient(&redis.Options{
 			Addr:       net.JoinHostPort(conf.Host, conf.Port),
 			DB:         conf.DB,
+			Username:   conf.Username,
 			Password:   conf.Password,
 			MaxRetries: 3,
 		}),
@@ -169,7 +169,7 @@ func (s *RedisMutex) lock(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		ok, err = s.client.SetNX(s.key, s.tok, time.Minute).Result()
+		ok, err = s.client.SetNX(ctx, s.key, s.tok, time.Minute).Result()
 		if err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func (s *RedisMutex) lock(ctx context.Context) error {
 				return
 			}
 
-			val, err := redisExpireScript.Run(s.client, []string{s.key}, s.tok, int(time.Minute/time.Second)).Result()
+			val, err := redisExpireScript.Run(context.Background(), s.client, []string{s.key}, s.tok, int(time.Minute/time.Second)).Result()
 
 			select {
 			case <-s.monitor:
@@ -226,7 +226,7 @@ func (s *RedisMutex) unlock() error {
 
 	close(s.monitor)
 
-	val, err := redisDelScript.Run(s.client, []string{s.key}, s.tok).Result()
+	val, err := redisDelScript.Run(context.Background(), s.client, []string{s.key}, s.tok).Result()
 	if err != nil {
 		return err
 	}
