@@ -3,6 +3,7 @@ package synlock
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -47,6 +48,7 @@ type RedisOpts struct {
 	Host, Port         string
 	DB                 int
 	Username, Password string
+	TLSConfig          *tls.Config
 	Prefix             string
 }
 
@@ -90,6 +92,7 @@ func NewRedis(conf RedisOpts, opts ...Option) (*Redis, error) {
 			DB:         conf.DB,
 			Username:   conf.Username,
 			Password:   conf.Password,
+			TLSConfig:  conf.TLSConfig,
 			MaxRetries: 3,
 		}),
 		prefix: conf.Prefix,
