@@ -1,4 +1,4 @@
-# Synlock [![Build Status](https://travis-ci.com/lukashes/synlock.svg?branch=master)](https://app.travis-ci.com/github/lukashes/synlock)
+# Synlock ![status](https://github.com/lukashes/synlock/actions/workflows/tests.yaml/badge.svg)
 
 Allows to construct distributed locks engine if you have:
 
