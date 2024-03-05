@@ -60,7 +60,7 @@ func NewPostgres(conf PostgresOpts) (_ *Postgres, err error) {
 		cfg.MaxConns = int32(conf.MaxConnections)
 	}
 
-	conn, err := pgxpool.ConnectConfig(context.TODO(), cfg)
+	conn, err := pgxpool.ConnectConfig(context.Background(), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to database: %v", err)
 	}
@@ -106,12 +106,12 @@ func (s *PostgresMutex) lock() error {
 			time.Sleep(jitter)
 		}
 
-		s.tx, err = s.client.Begin(context.TODO())
+		s.tx, err = s.client.Begin(context.Background())
 		if err != nil {
 			return err
 		}
 
-		err = s.tx.QueryRow(context.TODO(), "SELECT pg_try_advisory_xact_lock($1)", s.key).Scan(&ok)
+		err = s.tx.QueryRow(context.Background(), "SELECT pg_try_advisory_xact_lock($1)", s.key).Scan(&ok)
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func (s *PostgresMutex) lock() error {
 			return nil
 		}
 
-		if err = s.tx.Rollback(context.TODO()); err != nil {
+		if err = s.tx.Rollback(context.Background()); err != nil {
 			return err
 		}
 
@@ -136,5 +136,5 @@ func (s *PostgresMutex) lock() error {
 }
 
 func (s *PostgresMutex) unlock() error {
-	return s.tx.Rollback(context.TODO())
+	return s.tx.Rollback(context.Background())
 }
