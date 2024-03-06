@@ -1,8 +1,9 @@
 package synlock
 
 import (
+	"errors"
+	"fmt"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 )
@@ -10,7 +11,7 @@ import (
 func TestPostgresMutex(t *testing.T) {
 	p, err := NewPostgres(DefPostgresOpts)
 	if err != nil {
-		t.Fatalf(	"init postgres object error: %s", err)
+		t.Fatalf("init postgres object error: %s", err)
 	}
 
 	m1, err := p.NewMutex(123)
@@ -30,22 +31,25 @@ func TestPostgresMutex(t *testing.T) {
 		t.Fatalf("acquiring lock error: %s", err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	resChan := make(chan error, 1)
 	go func() {
-		defer wg.Done()
+		defer close(resChan)
 		if critical {
-			t.Fatalf("invalid critical section value")
+			resChan <- errors.New("invalid critical section value")
+			return
 		}
 
 		if err := mu2.lock(); err != nil {
-			t.Fatalf("acquiring lock error: %s", err)
+			resChan <- fmt.Errorf("acquiring lock error: %s", err)
+			return
 		}
 		if !critical {
-			t.Fatalf("unexpected access to the critical section")
+			resChan <- errors.New("unexpected access to the critical section")
+			return
 		}
 		if err := mu2.unlock(); err != nil {
-			t.Fatalf("releasinglock error: %s", err)
+			resChan <- fmt.Errorf("releasinglock error: %s", err)
+			return
 		}
 	}()
 
@@ -58,5 +62,7 @@ func TestPostgresMutex(t *testing.T) {
 		t.Fatalf("releasing lock error: %s", err)
 	}
 
-	wg.Wait()
+	for m := range resChan {
+		t.Fatal(m.Error())
+	}
 }

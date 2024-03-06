@@ -1,12 +1,14 @@
 package synlock
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 var (
@@ -30,7 +32,7 @@ type PostgresOpts struct {
 }
 
 type Postgres struct {
-	client *pgx.ConnPool
+	client *pgxpool.Pool
 }
 
 func NewPostgres(conf PostgresOpts) (_ *Postgres, err error) {
@@ -47,18 +49,18 @@ func NewPostgres(conf PostgresOpts) (_ *Postgres, err error) {
 
 	var (
 		connString = fmt.Sprintf("postgres://%s%s:%s/%s", auth, conf.Host, conf.Port, conf.DB)
-		connConfig pgx.ConnConfig
 	)
-	if connConfig, err = pgx.ParseConnectionString(connString); err != nil {
+
+	cfg, err := pgxpool.ParseConfig(connString)
+	if err != nil {
 		return nil, err
 	}
 
-	var connPoolConfig = pgx.ConnPoolConfig{
-		ConnConfig:     connConfig,
-		MaxConnections: conf.MaxConnections,
+	if conf.MaxConnections > 0 {
+		cfg.MaxConns = int32(conf.MaxConnections)
 	}
 
-	conn, err := pgx.NewConnPool(connPoolConfig)
+	conn, err := pgxpool.ConnectConfig(context.Background(), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to database: %v", err)
 	}
@@ -76,12 +78,10 @@ func (r *Postgres) NewMutex(key int64) (Mutex, error) {
 }
 
 type PostgresMutex struct {
-	client  *pgx.ConnPool
-	key     int64
-	monitor chan struct{}
-	mu      sync.Mutex
-	tok     string
-	tx      *pgx.Tx
+	client *pgxpool.Pool
+	key    int64
+	mu     sync.Mutex
+	tx     pgx.Tx
 }
 
 func (s *PostgresMutex) Lock() error {
@@ -106,11 +106,12 @@ func (s *PostgresMutex) lock() error {
 			time.Sleep(jitter)
 		}
 
-		if s.tx, err = s.client.Begin(); err != nil {
+		s.tx, err = s.client.Begin(context.Background())
+		if err != nil {
 			return err
 		}
 
-		err = s.tx.QueryRow("SELECT pg_try_advisory_xact_lock($1)", s.key).Scan(&ok)
+		err = s.tx.QueryRow(context.Background(), "SELECT pg_try_advisory_xact_lock($1)", s.key).Scan(&ok)
 		if err != nil {
 			return err
 		}
@@ -119,7 +120,7 @@ func (s *PostgresMutex) lock() error {
 			return nil
 		}
 
-		if err = s.tx.Rollback(); err != nil {
+		if err = s.tx.Rollback(context.Background()); err != nil {
 			return err
 		}
 
@@ -135,5 +136,5 @@ func (s *PostgresMutex) lock() error {
 }
 
 func (s *PostgresMutex) unlock() error {
-	return s.tx.Rollback()
+	return s.tx.Rollback(context.Background())
 }

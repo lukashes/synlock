@@ -2,8 +2,9 @@ package synlock
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 )
@@ -31,22 +32,25 @@ func TestRedisMutex(t *testing.T) {
 		t.Fatalf("acquiring lock error: %s", err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	resChan := make(chan error, 1)
 	go func() {
-		defer wg.Done()
+		defer close(resChan)
 		if critical {
-			t.Fatalf("invalid critical section value")
+			resChan <- errors.New("invalid critical section value")
+			return
 		}
 
 		if err := mu2.lock(context.Background()); err != nil {
-			t.Fatalf("acquiring lock error: %s", err)
+			resChan <- fmt.Errorf("acquiring lock error: %s", err)
+			return
 		}
 		if !critical {
-			t.Fatalf("unexpected access to the critical section")
+			resChan <- errors.New("unexpected access to the critical section")
+			return
 		}
 		if err := mu2.unlock(); err != nil {
-			t.Fatalf("releasinglock error: %s", err)
+			resChan <- fmt.Errorf("releasinglock error: %s", err)
+			return
 		}
 	}()
 
@@ -59,7 +63,9 @@ func TestRedisMutex(t *testing.T) {
 		t.Fatalf("releasing lock error: %s", err)
 	}
 
-	wg.Wait()
+	for err := range resChan {
+		t.Fatal(err.Error())
+	}
 }
 
 func TestRedisMutexContextCancellation(t *testing.T) {
@@ -84,23 +90,28 @@ func TestRedisMutexContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acquiring lock error: %s", err)
 	}
+	//nolint
 	defer mu1.Unlock()
 
-	wait := make(chan struct{})
+	res := make(chan error)
 	go func() {
-		defer close(wait)
+		defer close(res)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 		defer cancel()
 
 		err = mu2.LockContext(ctx)
 		if err != ctx.Err() {
-			t.Fatalf("unexpected aqcuiring context lock error: %s", err)
+			res <- fmt.Errorf("unexpected aqcuiring context lock error: %s", err)
+			return
 		}
 	}()
 
 	select {
-	case <-wait:
+	case err, ok := <-res:
+		if ok {
+			t.Fatal(err.Error())
+		}
 	case <-time.After(time.Second):
 		t.Fatalf("Checking blocking context timeout")
 	}
